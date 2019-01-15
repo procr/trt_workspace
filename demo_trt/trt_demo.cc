@@ -19,7 +19,7 @@ inline uint64_t GetTimeInNsec() {
 /*
  * Use the tensorrt fluid engine to inference the demo.
  */
-void Main(std::string name) {
+void Main(std::string name, int batch_size) {
   std::unique_ptr<PaddlePredictor> predictor;
   paddle::contrib::AnalysisConfig config(true);
   //config.model_dir = "/Paddle/inference.model.resnet50.batch1.pass1.flowers";
@@ -30,13 +30,22 @@ void Main(std::string name) {
   //config.param_file = "/models/fluid/PaddleCV/image_classification/output/" + name + "/params";
   //config.prog_file = "/models/fluid/PaddleCV/image_classification/output/" + name + "/model";
 
-  config.param_file = "/trt_workspace/caffe2fluid/fluid/" + name + "/params";
-  config.prog_file = "/trt_workspace/caffe2fluid/fluid/" + name + "/model";
+  //config.param_file = "/trt_workspace/caffe2fluid/fluid/" + name + "/params";
+      //config.prog_file = "/trt_workspace/caffe2fluid/fluid/" + name + "/model";
+
+  config.param_file = "/chenrong06/paddle_cv_model/output/" + name + "/__params__";
+  config.prog_file = "/chenrong06/paddle_cv_model/output/" + name + "/__model__";
+
+  int n = batch_size;
+  int c = 3;
+  int h = 224;
+  int w = 224;
+  int img_size = n * c * h * w;
 
   printf("%s\n%s\n", config.param_file.c_str(), config.prog_file.c_str());
   config.device = 0;
-  config.EnableTensorRtEngine();
-  config.fraction_of_gpu_memory = 0.15;  // set by yourself
+  config.EnableTensorRtEngine(img_size * 2, batch_size); //(int workspace_size = 1 << 20, int max_batch_size = 1);
+  config.fraction_of_gpu_memory = 0.9;  // set by yourself
 
   //config.pass_builder()->TurnOnDebug();
   //config.pass_builder()->DeletePass("infer_clean_graph_pass");
@@ -47,12 +56,7 @@ void Main(std::string name) {
 
   predictor = CreatePaddlePredictor(config);
 
-  int n = 10;
-  int c = 3;
-  int h = 224;
-  int w = 224;
-  int img_size = c * h * w;
-  float data[n * c * h * w];
+  float data[img_size];
   int64_t label[n];
 
   static std::default_random_engine s_generator;
@@ -64,18 +68,18 @@ void Main(std::string name) {
       label[i] = (int64_t)i;
   }
 
-  for (int i = 0; i < n; ++i) {
+  for (int repete = 0; repete < 10; ++repete) {
       PaddleTensor tensor_data;
-      tensor_data.shape = std::vector<int>({1, c, h, w});
-      tensor_data.data = PaddleBuf(static_cast<void *>(&data[i * img_size]), img_size * sizeof(float));
+      tensor_data.shape = std::vector<int>({n, c, h, w});
+      tensor_data.data = PaddleBuf(static_cast<void *>(data), img_size * sizeof(float));
       tensor_data.dtype = PaddleDType::FLOAT32;
 
       /*
-      PaddleTensor tensor_label;
-      tensor_label.shape = std::vector<int>({1, 1000});
-      tensor_label.data = PaddleBuf(static_cast<void *>(&label[i]), sizeof(float));
-      tensor_label.dtype = PaddleDType::INT64;
-      */
+         PaddleTensor tensor_label;
+         tensor_label.shape = std::vector<int>({1, 1000});
+         tensor_label.data = PaddleBuf(static_cast<void *>(&label[i]), sizeof(float));
+         tensor_label.dtype = PaddleDType::INT64;
+         */
 
       std::vector<PaddleTensor> outputs;
 
@@ -92,10 +96,10 @@ void Main(std::string name) {
 
 int main(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 2) {
-      printf("Please enter model name\n");
+  if (argc != 3) {
+      printf("Please enter model name and batch_size\n");
       return 0;
   }
-  paddle::demo::Main(argv[1]);
+  paddle::demo::Main(argv[1], std::stoi(argv[2]));
   return 0;
 }
